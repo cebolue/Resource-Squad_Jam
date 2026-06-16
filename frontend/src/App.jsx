@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useCallback } from "react";
+import React, { useMemo, useState, useCallback, useRef, useEffect } from "react";
 
 const YEARS = [2026, 2027, 2028];
 const CURRENT_SPRINT_CODE = "IT-06-01";
@@ -11,8 +11,6 @@ const DEPARTMENTS = [
   { key: "VA", label: "Visualization Analyst" },
   { key: "PO", label: "Product Owners" },
   { key: "SC", label: "Scrum Coordinators" },
-  { key: "AR", label: "Architect" },
-  { key: "PA", label: "P - APP" },
 ];
 
 const QUARTER_TEMPLATE = [
@@ -21,6 +19,35 @@ const QUARTER_TEMPLATE = [
   { id: "Q3", label: "Q3 - Jul to Sep", sprints: ["IT-07-01", "IT-07-02", "IT-08-01", "IT-08-02", "IT-09-01", "IT-09-02", "IT-09-03"] },
   { id: "Q4", label: "Q4 - Oct to Dec", sprints: ["IT-10-01", "IT-10-02", "IT-11-01", "IT-11-02", "IT-12-01", "IT-12-02"] },
 ];
+
+const SPRINT_DATE_MAP = {
+  "IT-01-01": "Dec 29 - Jan 09",
+  "IT-01-02": "Jan 12 - Jan 23",
+  "IT-02-01": "Jan 26 - Feb 06",
+  "IT-02-02": "Feb 09 - Feb 20",
+  "IT-03-01": "Feb 23 - Mar 06",
+  "IT-03-02": "Mar 09 - Mar 20",
+  "IT-03-03": "Mar 23 - Apr 03",
+  "IT-04-01": "Apr 06 - Apr 17",
+  "IT-04-02": "Apr 20 - May 01",
+  "IT-05-01": "May 04 - May 15",
+  "IT-05-02": "May 18 - May 29",
+  "IT-06-01": "Jun 01 - Jun 12",
+  "IT-06-02": "Jun 15 - Jun 26",
+  "IT-07-01": "Jun 29 - Jul 10",
+  "IT-07-02": "Jul 13 - Jul 24",
+  "IT-08-01": "Jul 27 - Aug 07",
+  "IT-08-02": "Aug 10 - Aug 21",
+  "IT-09-01": "Aug 24 - Sep 04",
+  "IT-09-02": "Sep 07 - Sep 18",
+  "IT-09-03": "Sep 21 - Oct 02",
+  "IT-10-01": "Oct 05 - Oct 16",
+  "IT-10-02": "Oct 19 - Oct 30",
+  "IT-11-01": "Nov 02 - Nov 13",
+  "IT-11-02": "Nov 16 - Nov 27",
+  "IT-12-01": "Nov 30 - Dec 11",
+  "IT-12-02": "Dec 14 - Dec 25",
+};
 
 const ALL_SPRINT_CODES = QUARTER_TEMPLATE.flatMap((q) => q.sprints);
 const RESOURCE_PLAN_ROWS = 10;
@@ -48,7 +75,7 @@ function allocMap(pattern) {
   return Object.fromEntries(ALL_SPRINT_CODES.map((s) => [s, { ...pattern }]));
 }
 
-function createProduct(name, pattern = { DS: 0, DD: 0, VA: 0, PO: 0, SC: 0, AR: 0, PA: 0 }) {
+function createProduct(name, pattern = { DS: 0, DD: 0, VA: 0, PO: 0, SC: 0 }) {
   const resources = createEmptyResources();
   DEPARTMENTS.forEach((dept) => {
     ALL_SPRINT_CODES.forEach((sprintCode) => {
@@ -64,6 +91,7 @@ function createProduct(name, pattern = { DS: 0, DD: 0, VA: 0, PO: 0, SC: 0, AR: 
     name,
     allocations: allocMap(pattern),
     resources,
+    doneFromSprint: null,
   };
 }
 
@@ -83,9 +111,9 @@ function createBaseValueStream() {
     expanded: true,
     teams: [
       createTeam("Equipment Analytics", [
-        createProduct("Sustainment", { DS: 70, DD: 90, VA: 70, PO: 100, SC: 50, AR: 20, PA: 15 }),
-        createProduct("FIA", { DS: 0, DD: 30, VA: 0, PO: 30, SC: 0, AR: 10, PA: 0 }),
-        createProduct("ME/MW Furnace DeCoke", { DS: 0, DD: 20, VA: 0, PO: 50, SC: 10, AR: 15, PA: 10 }),
+        createProduct("Sustainment", { DS: 70, DD: 90, VA: 70, PO: 100, SC: 50 }),
+        createProduct("FIA", { DS: 0, DD: 30, VA: 0, PO: 30, SC: 0 }),
+        createProduct("ME/MW Furnace DeCoke", { DS: 0, DD: 20, VA: 0, PO: 50, SC: 10 }),
       ]),
     ],
   };
@@ -105,8 +133,6 @@ function ensureProductShape(product) {
         VA: Number(raw.VA ?? raw.FE ?? 0),
         PO: Number(raw.PO || 0),
         SC: Number(raw.SC || 0),
-        AR: Number(raw.AR || 0),
-        PA: Number(raw.PA || 0),
       };
       return [sprintCode, mapped];
     })
@@ -149,6 +175,7 @@ function ensureProductShape(product) {
     ...product,
     allocations: normalizedAllocations,
     resources: normalizedResources,
+    doneFromSprint: ALL_SPRINT_CODES.includes(product.doneFromSprint) ? product.doneFromSprint : null,
   };
 }
 
@@ -194,11 +221,23 @@ function quarterHeadClass(quarterId) {
   return "q4-head";
 }
 
+function getSprintIndex(sprintCode) {
+  return ALL_SPRINT_CODES.indexOf(sprintCode);
+}
+
+function isProductDeliveredAtSprint(product, sprintCode) {
+  if (!product?.doneFromSprint) return false;
+  const doneIdx = getSprintIndex(product.doneFromSprint);
+  const sprintIdx = getSprintIndex(sprintCode);
+  if (doneIdx < 0 || sprintIdx < 0) return false;
+  return sprintIdx >= doneIdx;
+}
+
 function parsePct(raw) {
   const num = Number(String(raw).replace("%", ""));
   if (Number.isNaN(num) || num < 0) return 0;
-  if (num > 300) return 300;
-  return Math.round(num);
+  if (num > 100) return 100;
+  return Math.round(num / 10) * 10;
 }
 
 function getSprintDeptTotalsForValueStream(vs, sprintCode) {
@@ -289,15 +328,179 @@ function getResourceEntries(product, deptKey, sprintCode) {
   return fallback;
 }
 
-function ResourceGroup({ totals, needs, onToggleResource, isResourceOpen }) {
+function normalizeResourceName(name) {
+  return String(name || "").trim().toLowerCase();
+}
+
+function buildGlobalNamedTotalsBySprint(streams, sprintCodes) {
+  const bySprint = {};
+
+  sprintCodes.forEach((sprintCode) => {
+    const byDept = Object.fromEntries(DEPARTMENTS.map((dept) => [dept.key, {}]));
+
+    (streams || []).forEach((vs) => {
+      (vs.teams || []).forEach((team) => {
+        (team.products || []).forEach((product) => {
+          DEPARTMENTS.forEach((dept) => {
+            const rows = getResourceEntries(product, dept.key, sprintCode).slice(0, RESOURCE_PLAN_ROWS - 1);
+            rows.forEach((row) => {
+              const normalized = normalizeResourceName(row?.name);
+              if (!normalized) return;
+              const pct = Number(row?.percent || 0);
+              byDept[dept.key][normalized] = Number(byDept[dept.key][normalized] || 0) + pct;
+            });
+          });
+        });
+      });
+    });
+
+    bySprint[sprintCode] = byDept;
+  });
+
+  return bySprint;
+}
+
+function hasTeamMaxedResource(team, deptKey, sprintCode, globalBySprint) {
+  const totals = globalBySprint?.[sprintCode]?.[deptKey] || {};
+  const products = team?.products || [];
+
+  return products.some((product) => {
+    const rows = getResourceEntries(product, deptKey, sprintCode).slice(0, RESOURCE_PLAN_ROWS - 1);
+    return rows.some((row) => {
+      const name = normalizeResourceName(row?.name);
+      if (!name) return false;
+      const pct = Number(row?.percent || 0);
+      return pct > 0 && Number(totals[name] || 0) === 100;
+    });
+  });
+}
+
+function hasValueStreamMaxedResource(vs, deptKey, sprintCode, globalBySprint) {
+  const teams = vs?.teams || [];
+  return teams.some((team) => hasTeamMaxedResource(team, deptKey, sprintCode, globalBySprint));
+}
+
+function isNamedRowOverloaded(row, deptKey, sprintCode, globalBySprint) {
+  const totals = globalBySprint?.[sprintCode]?.[deptKey] || {};
+  const name = normalizeResourceName(row?.name);
+  if (!name) return false;
+  const pct = Number(row?.percent || 0);
+  return pct > 0 && Number(totals[name] || 0) > 100;
+}
+
+function hasProductOverloadedResource(product, deptKey, sprintCode, globalBySprint) {
+  const rows = getResourceEntries(product, deptKey, sprintCode).slice(0, RESOURCE_PLAN_ROWS - 1);
+  return rows.some((row) => isNamedRowOverloaded(row, deptKey, sprintCode, globalBySprint));
+}
+
+function hasTeamOverloadedResource(team, deptKey, sprintCode, globalBySprint) {
+  const products = team?.products || [];
+  return products.some((product) => hasProductOverloadedResource(product, deptKey, sprintCode, globalBySprint));
+}
+
+function hasValueStreamOverloadedResource(vs, deptKey, sprintCode, globalBySprint) {
+  const teams = vs?.teams || [];
+  return teams.some((team) => hasTeamOverloadedResource(team, deptKey, sprintCode, globalBySprint));
+}
+
+function getAssignedResourceRows(product, deptKey, sprintCode) {
+  const entries = getResourceEntries(product, deptKey, sprintCode);
+  const assigned = entries
+    .slice(0, RESOURCE_PLAN_ROWS - 1)
+    .map((entry) => ({
+      name: String(entry?.name || "").trim() || "Unassigned",
+      percent: Number(entry?.percent || 0),
+      isNeed: false,
+    }));
+
+  const need = Number(entries[RESOURCE_PLAN_ROWS - 1]?.percent || 0);
+  assigned.push({
+    name: "Need",
+    percent: need,
+    isNeed: true,
+  });
+
+  return assigned;
+}
+
+function buildSprintInsights(streams, sprintCode) {
+  const namedTotals = {};
+  const needs = [];
+
+  (streams || []).forEach((vs) => {
+    (vs.teams || []).forEach((team) => {
+      (team.products || []).forEach((product) => {
+        DEPARTMENTS.forEach((dept) => {
+          const entries = getResourceEntries(product, dept.key, sprintCode);
+          const namedRows = entries.slice(0, RESOURCE_PLAN_ROWS - 1);
+
+          namedRows.forEach((row) => {
+            const normalized = normalizeResourceName(row?.name);
+            const displayName = String(row?.name || "").trim();
+            const pct = Number(row?.percent || 0);
+            if (!normalized || pct <= 0) return;
+
+            const resourceKey = `${dept.key}::${normalized}`;
+            if (!namedTotals[resourceKey]) {
+              namedTotals[resourceKey] = {
+                deptKey: dept.key,
+                name: displayName,
+                total: 0,
+                spots: [],
+              };
+            }
+
+            namedTotals[resourceKey].total += pct;
+            namedTotals[resourceKey].spots.push({
+              teamName: team.name,
+              productName: product.name,
+              pct,
+            });
+          });
+
+          const needPct = Number(entries[RESOURCE_PLAN_ROWS - 1]?.percent || 0);
+          if (needPct > 0) {
+            needs.push(`${dept.key} need ${needPct}% in ${team.name} / ${product.name}`);
+          }
+        });
+      });
+    });
+  });
+
+  const resources = Object.values(namedTotals);
+
+  const overAllocated = resources
+    .filter((resource) => resource.total > 100)
+    .map((resource) => {
+      const spotSummary = resource.spots
+        .map((spot) => `${spot.teamName} / ${spot.productName} (${spot.pct}%)`)
+        .join(", ");
+      return `${resource.name} (${resource.deptKey}) ${resource.total}% -> ${spotSummary}`;
+    });
+
+  const underAllocated = resources
+    .filter((resource) => resource.total < 100)
+    .map((resource) => `${resource.name} (${resource.deptKey}) ${resource.total}%`);
+
+  return {
+    overAllocated,
+    needs,
+    underAllocated,
+  };
+}
+
+function ResourceGroup({ totals, needs, overloads, onToggleResource, isResourceOpen, readOnly }) {
   return (
-    <div className="pct-edit-wrap">
+    <div className={`pct-edit-wrap${readOnly ? " is-readonly" : ""}`}>
       {DEPARTMENTS.map((dept) => (
         <button
           key={dept.key}
           type="button"
-          className={`pct-edit-line pct-chip${isResourceOpen(dept.key) ? " is-open" : ""}${needs?.[dept.key] ? " has-need" : ""}`}
-          onClick={() => onToggleResource(dept.key)}
+          className={`pct-edit-line pct-chip${isResourceOpen(dept.key) ? " is-open" : ""}${needs?.[dept.key] ? " has-need" : ""}${overloads?.[dept.key] ? " is-overloaded" : ""}`}
+          onClick={() => {
+            if (readOnly) return;
+            onToggleResource(dept.key);
+          }}
           title={`Open ${dept.label} resource plan`}
         >
           <span>{dept.key}</span>
@@ -326,6 +529,9 @@ export default function App() {
   });
   const [openResourceRows, setOpenResourceRows] = useState({});
   const [selectedSprints, setSelectedSprints] = useState(new Set());
+  const [fullScreenSprintCode, setFullScreenSprintCode] = useState(null);
+  const historyRef = useRef([]);
+  const gridScrollRef = useRef(null);
 
   const allSprints = useMemo(
     () => QUARTER_TEMPLATE.flatMap((q) => q.sprints.map((s) => ({ code: s, quarter: q.id }))),
@@ -333,7 +539,9 @@ export default function App() {
   );
 
   const currentSprints = useMemo(() => {
-    if (selectedSprints.size === 0) return allSprints;
+    if (selectedSprints.size === 0) {
+      return allSprints;
+    }
     const visibleIndexes = new Set();
 
     allSprints.forEach((sprint, index) => {
@@ -351,6 +559,69 @@ export default function App() {
   }, [allSprints, selectedSprints]);
 
   const streams = dataByYear[year] || [];
+  const sprintInsightsByCode = useMemo(
+    () => Object.fromEntries(currentSprints.map((s) => [s.code, buildSprintInsights(streams, s.code)])),
+    [currentSprints, streams]
+  );
+
+  useEffect(() => {
+    if (selectedSprints.size !== 0) return;
+    const container = gridScrollRef.current;
+    if (!container) return;
+
+    const target = container.querySelector(`[data-sprint-code="${CURRENT_SPRINT_CODE}"]`);
+    if (!target) return;
+
+    const leftOffset = Math.max(0, target.offsetLeft - 320);
+    container.scrollTo({ left: leftOffset, behavior: "smooth" });
+  }, [selectedSprints, year]);
+  const globalNamedTotalsBySprint = useMemo(
+    () => buildGlobalNamedTotalsBySprint(streams, ALL_SPRINT_CODES),
+    [streams]
+  );
+  const fullScreenSprintData = useMemo(() => {
+    if (!fullScreenSprintCode) return [];
+
+    return streams
+      .map((vs) => {
+        const teams = vs.teams
+          .map((team) => {
+            const products = team.products
+              .map((product) => {
+                const departments = DEPARTMENTS
+                  .map((dept) => ({
+                    ...dept,
+                    rows: getAssignedResourceRows(product, dept.key, fullScreenSprintCode),
+                  }))
+                  .filter((dept) => dept.rows.length > 0);
+
+                if (!departments.length) return null;
+                return {
+                  id: product.id,
+                  name: product.name,
+                  departments,
+                };
+              })
+              .filter(Boolean);
+
+            if (!products.length) return null;
+            return {
+              id: team.id,
+              name: team.name,
+              products,
+            };
+          })
+          .filter(Boolean);
+
+        if (!teams.length) return null;
+        return {
+          id: vs.id,
+          name: vs.name,
+          teams,
+        };
+      })
+      .filter(Boolean);
+  }, [fullScreenSprintCode, streams]);
   const teamCount = useMemo(
     () => streams.reduce((sum, vs) => sum + (Array.isArray(vs.teams) ? vs.teams.length : 0), 0),
     [streams]
@@ -359,6 +630,7 @@ export default function App() {
   const updateCurrentYear = useCallback(
     (updater) => {
       setDataByYear((prev) => {
+        historyRef.current = [prev, ...historyRef.current].slice(0, 30);
         const next = {
           ...prev,
           [year]: updater(prev[year] || []),
@@ -371,9 +643,10 @@ export default function App() {
   );
 
   const replaceAllYears = useCallback((nextByYear) => {
+    historyRef.current = [dataByYear, ...historyRef.current].slice(0, 30);
     setDataByYear(nextByYear);
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(nextByYear));
-  }, []);
+  }, [dataByYear]);
 
   const toggleVS = useCallback(
     (vsId) => updateCurrentYear((rows) => rows.map((vs) => (vs.id === vsId ? { ...vs, expanded: !vs.expanded } : vs))),
@@ -445,10 +718,138 @@ export default function App() {
     });
   }, [updateCurrentYear]);
 
-  const resetWorkbookModel = useCallback(() => {
-    if (!window.confirm("Reset all years back to the one-team Excel template?")) return;
-    replaceAllYears(normalizeDataByYear(null));
-  }, [replaceAllYears]);
+  const cloneEntries = useCallback((entries = []) => entries.map((entry) => ({ ...entry })), []);
+
+  const copyFromPreviousSprint = useCallback((targetSprintCode) => {
+    const sprintIndex = ALL_SPRINT_CODES.indexOf(targetSprintCode);
+    if (sprintIndex <= 0) {
+      return;
+    }
+    const prevSprintCode = ALL_SPRINT_CODES[sprintIndex - 1];
+
+    updateCurrentYear((rows) =>
+      rows.map((vs) => ({
+        ...vs,
+        teams: vs.teams.map((team) => ({
+          ...team,
+          products: team.products.map((product) => {
+            if (isProductDeliveredAtSprint(product, targetSprintCode)) {
+              return product;
+            }
+
+            const nextResources = { ...product.resources };
+
+            DEPARTMENTS.forEach((dept) => {
+              const deptMap = { ...(nextResources[dept.key] || {}) };
+              const prevEntries = getResourceEntries(product, dept.key, prevSprintCode);
+              deptMap[targetSprintCode] = cloneEntries(prevEntries);
+              nextResources[dept.key] = deptMap;
+            });
+
+            return {
+              ...product,
+              resources: nextResources,
+            };
+          }),
+        })),
+      }))
+    );
+  }, [cloneEntries, updateCurrentYear]);
+
+  const setProductDoneFromSprint = useCallback(
+    (vsId, teamId, productId, nextDoneSprint) => {
+      updateCurrentYear((rows) =>
+        rows.map((vs) =>
+          vs.id !== vsId
+            ? vs
+            : {
+                ...vs,
+                teams: vs.teams.map((team) =>
+                  team.id !== teamId
+                    ? team
+                    : {
+                        ...team,
+                        products: team.products.map((product) => {
+                          if (product.id !== productId) return product;
+
+                          if (!nextDoneSprint) {
+                            return {
+                              ...product,
+                              doneFromSprint: null,
+                            };
+                          }
+
+                          const cutoff = getSprintIndex(nextDoneSprint);
+                          const nextResources = { ...product.resources };
+                          const nextAllocations = { ...product.allocations };
+
+                          DEPARTMENTS.forEach((dept) => {
+                            const deptMap = { ...(nextResources[dept.key] || {}) };
+                            ALL_SPRINT_CODES.forEach((code, idx) => {
+                              if (idx < cutoff) return;
+                              deptMap[code] = createEmptyResourceEntries();
+                              nextAllocations[code] = {
+                                ...(nextAllocations[code] || {}),
+                                [dept.key]: 0,
+                              };
+                            });
+                            nextResources[dept.key] = deptMap;
+                          });
+
+                          return {
+                            ...product,
+                            doneFromSprint: nextDoneSprint,
+                            resources: nextResources,
+                            allocations: nextAllocations,
+                          };
+                        }),
+                      }
+                ),
+              }
+        )
+      );
+    },
+    [updateCurrentYear]
+  );
+
+  const handleProductDoneButton = useCallback(
+    (vsId, teamId, product) => {
+      if (product.doneFromSprint) {
+        setProductDoneFromSprint(vsId, teamId, product.id, null);
+        return;
+      }
+
+      const current = product.doneFromSprint || CURRENT_SPRINT_CODE;
+      const value = window.prompt(
+        "Set done-from sprint code (example: IT-06-01). Leave empty to clear done status.",
+        current
+      );
+
+      if (value === null) return;
+      const trimmed = value.trim();
+
+      if (!trimmed) {
+        setProductDoneFromSprint(vsId, teamId, product.id, null);
+        return;
+      }
+
+      if (!ALL_SPRINT_CODES.includes(trimmed)) {
+        window.alert("Invalid sprint code.");
+        return;
+      }
+
+      setProductDoneFromSprint(vsId, teamId, product.id, trimmed);
+    },
+    [setProductDoneFromSprint]
+  );
+
+  const revertLastChange = useCallback(() => {
+    if (!historyRef.current.length) return;
+    const [previous, ...rest] = historyRef.current;
+    historyRef.current = rest;
+    setDataByYear(previous);
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(previous));
+  }, []);
 
   const editValueStream = useCallback(
     (vsId, currentName) => {
@@ -614,6 +1015,43 @@ export default function App() {
   const updateResourcePlanEntry = useCallback(
     (vsId, teamId, productId, deptKey, sprintCode, rowIndex, field, rawValue) => {
       const nextValue = field === "percent" ? parsePct(rawValue) : String(rawValue);
+
+      const currentRows = dataByYear[year] || [];
+      const currentVs = currentRows.find((row) => row.id === vsId);
+      const currentTeam = currentVs?.teams?.find((t) => t.id === teamId);
+      const currentProduct = currentTeam?.products?.find((p) => p.id === productId);
+      if (isProductDeliveredAtSprint(currentProduct, sprintCode)) {
+        return;
+      }
+
+      if (field === "name" && rowIndex !== RESOURCE_PLAN_ROWS - 1) {
+        updateCurrentYear((rows) =>
+          rows.map((vs) => ({
+            ...vs,
+            teams: vs.teams.map((t) => ({
+              ...t,
+              products: t.products.map((p) => ({
+                ...p,
+                resources: {
+                  ...p.resources,
+                  [deptKey]: {
+                    ...(p.resources[deptKey] || {}),
+                    [sprintCode]: getResourceEntries(p, deptKey, sprintCode).map((entry, idx) => {
+                      if (idx !== rowIndex) return entry;
+                      return {
+                        ...entry,
+                        name: nextValue,
+                      };
+                    }),
+                  },
+                },
+              })),
+            })),
+          }))
+        );
+        return;
+      }
+
       updateCurrentYear((rows) =>
         rows.map((vs) =>
           vs.id !== vsId
@@ -652,13 +1090,61 @@ export default function App() {
         )
       );
     },
-    [updateCurrentYear]
+    [dataByYear, updateCurrentYear, year]
   );
 
   const toggleResourceRow = useCallback((yearKey, productId, deptKey) => {
     const key = `${yearKey}-${productId}-${deptKey}`;
     setOpenResourceRows((prev) => ({ ...prev, [key]: !prev[key] }));
   }, []);
+
+  const openTeamDeptResources = useCallback(
+    (vsId, teamId, deptKey, sprintCode) => {
+      const currentRows = dataByYear[year] || [];
+      const vs = currentRows.find((item) => item.id === vsId);
+      if (!vs) return;
+
+      const team = (vs.teams || []).find((item) => item.id === teamId);
+      if (!team) return;
+
+      setOpenResourceRows((prev) => {
+        const next = { ...prev };
+        (team.products || []).forEach((product) => {
+          next[`${year}-${product.id}-${deptKey}`] = true;
+        });
+        return next;
+      });
+
+      // Ensure the full hierarchy is visible when a team chip is clicked.
+      updateCurrentYear((rows) =>
+        rows.map((row) =>
+          row.id !== vsId
+            ? row
+            : {
+                ...row,
+                expanded: true,
+                teams: row.teams.map((t) =>
+                  t.id !== teamId
+                    ? t
+                    : {
+                        ...t,
+                        expanded: true,
+                      }
+                ),
+              }
+        )
+      );
+
+      if (sprintCode) {
+        setSelectedSprints((prev) => {
+          const next = new Set(prev);
+          next.add(sprintCode);
+          return next;
+        });
+      }
+    },
+    [dataByYear, updateCurrentYear, year]
+  );
 
   const toggleSprintSelection = useCallback((sprintCode) => {
     setSelectedSprints((prev) => {
@@ -697,14 +1183,13 @@ export default function App() {
 
       <div className="toolbar">
         <span className="hint">Click department chips inside a sprint cell to expand names and percentages for that parameter. Click a sprint header to zoom/filter.</span>
-        <span className="zoom-helper">Zoom rule: previous sprint + selected sprint + next 3 sprints</span>
+        <span className="zoom-helper">Default view: current sprint + next 3. Zoom on select: previous + selected + next 3</span>
         <button type="button" className="add-vs-btn" onClick={scaleTeamsFromTemplate}>Scale to 20 Teams</button>
-        <button type="button" className="add-vs-btn" onClick={resetWorkbookModel}>Reset Template</button>
         <span className="pill">Teams: {teamCount}</span>
       </div>
 
       <div className="grid-root">
-        <div className="grid-scroll">
+        <div className="grid-scroll" ref={gridScrollRef}>
           <table className={`resource-table${selectedSprints.size > 0 ? ' sprints-filtered' : ''}`}>
             <colgroup>
               <col className="col-name" />
@@ -726,14 +1211,47 @@ export default function App() {
               <tr>
                 <th className="th-sprint-blank sticky-col" />
                 {currentSprints.map((s) => (
-                  <th key={s.code} className={`th-sprint ${sprintToneClass(s.code)}${s.code === CURRENT_SPRINT_CODE ? " th-current" : ""}${selectedSprints.has(s.code) ? " sprint-selected" : ""}`} onClick={() => toggleSprintSelection(s.code)} style={{cursor: 'pointer'}}>
-                    {s.code}
+                  <th key={s.code} data-sprint-code={s.code} className={`th-sprint ${sprintToneClass(s.code)}${s.code === CURRENT_SPRINT_CODE ? " th-current" : ""}${selectedSprints.has(s.code) ? " sprint-selected" : ""}`} onClick={() => toggleSprintSelection(s.code)} style={{cursor: 'pointer'}}>
+                    <div className="sprint-code">{s.code}</div>
+                    <div className="sprint-date">{SPRINT_DATE_MAP[s.code] || ""}</div>
+                    <div className="sprint-actions">
+                      <button
+                        type="button"
+                        className="sprint-action-btn"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          copyFromPreviousSprint(s.code);
+                        }}
+                      >
+                        Copy Last
+                      </button>
+                      <button
+                        type="button"
+                        className="sprint-action-btn"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          revertLastChange();
+                        }}
+                      >
+                        Revert
+                      </button>
+                      <button
+                        type="button"
+                        className="sprint-action-btn"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setFullScreenSprintCode(s.code);
+                        }}
+                      >
+                        Full Screen
+                      </button>
+                    </div>
                   </th>
                 ))}
               </tr>
 
               <tr>
-                <th className="th-dept sticky-col">Parameters: DS, DD, VA, PO, SC, Architect, P-APP</th>
+                <th className="th-dept sticky-col">Parameters: DS, DD, VA, PO, SC</th>
                 {currentSprints.map((s) => (
                   <th key={s.code} className={`th-dept-fill ${sprintToneClass(s.code)}`} />
                 ))}
@@ -741,10 +1259,54 @@ export default function App() {
             </thead>
 
             <tbody>
+              <tr className="insight-row">
+                <td className="insight-cell sticky-col">
+                  <strong>Sprint Insights</strong>
+                  <span className="resource-hint">1) Over-allocation 2) Need 3) Under 100%</span>
+                </td>
+                {currentSprints.map((s) => {
+                  const insights = sprintInsightsByCode[s.code] || { overAllocated: [], needs: [], underAllocated: [] };
+                  const overItems = insights.overAllocated.length ? insights.overAllocated : ["None"];
+                  const needItems = insights.needs.length ? insights.needs : ["None"];
+                  const underItems = insights.underAllocated.length ? insights.underAllocated : ["None"];
+
+                  return (
+                    <td key={`insight-${s.code}`} className={`insight-content-cell ${sprintToneClass(s.code)}${s.code === CURRENT_SPRINT_CODE ? " current-col" : ""}`}>
+                      <ol className="insight-list">
+                        <li className={`insight-item insight-over${insights.overAllocated.length === 0 ? " insight-empty" : ""}`}>
+                          <strong>Over-Allocated:</strong>
+                          <ul className="insight-sublist">
+                            {overItems.map((item, idx) => (
+                              <li key={`over-${s.code}-${idx}`}>{item}</li>
+                            ))}
+                          </ul>
+                        </li>
+                        <li className={`insight-item insight-need${insights.needs.length === 0 ? " insight-empty" : ""}`}>
+                          <strong>Need:</strong>
+                          <ul className="insight-sublist">
+                            {needItems.map((item, idx) => (
+                              <li key={`need-${s.code}-${idx}`}>{item}</li>
+                            ))}
+                          </ul>
+                        </li>
+                        <li className={`insight-item insight-under${insights.underAllocated.length === 0 ? " insight-empty" : ""}`}>
+                          <strong>Under 100%:</strong>
+                          <ul className="insight-sublist">
+                            {underItems.map((item, idx) => (
+                              <li key={`under-${s.code}-${idx}`}>{item}</li>
+                            ))}
+                          </ul>
+                        </li>
+                      </ol>
+                    </td>
+                  );
+                })}
+              </tr>
+
               {streams.map((vs) => (
                 <React.Fragment key={vs.id}>
                   <tr className="vs-row">
-                    <td className="vs-cell sticky-col">
+                    <td className="vs-cell sticky-col swimlane-root">
                       <button type="button" className="toggle-btn" onClick={() => toggleVS(vs.id)}>{vs.expanded ? "▾" : "▸"}</button>
                       <span className="name-main">{vs.name}</span>
                       <span className="row-actions">
@@ -758,17 +1320,24 @@ export default function App() {
                       const needFlags = getValueStreamNeedFlags(vs, s.code);
                       return (
                         <td key={s.code} className={`fill-vs ${sprintToneClass(s.code)}${s.code === CURRENT_SPRINT_CODE ? " current-col" : ""}`}>
-                          {!vs.expanded && (
-                            <div className="vs-rollup-line">
-                              {DEPARTMENTS.map((dept) => (
-                                <span key={dept.key} className={`vs-rollup-item${needFlags[dept.key] ? " has-need" : ""}`} title={`${dept.label} total`}>
+                          <div className="vs-rollup-line">
+                            {DEPARTMENTS.map((dept) => {
+                              const overloaded = hasValueStreamOverloadedResource(vs, dept.key, s.code, globalNamedTotalsBySprint);
+                              const maxed = hasValueStreamMaxedResource(vs, dept.key, s.code, globalNamedTotalsBySprint);
+
+                              return (
+                                <span
+                                  key={dept.key}
+                                  className={`vs-rollup-item vs-summary-btn${needFlags[dept.key] ? " has-need" : ""}${overloaded ? " is-overloaded" : ""}${!overloaded && maxed ? " is-maxed" : ""}`}
+                                  title={`${dept.label} total`}
+                                >
                                   <strong>{dept.key}</strong>
                                   <em>{Math.round(totals[dept.key])}%</em>
                                   {needFlags[dept.key] ? <i className="need-dot" aria-label="Need detected" /> : null}
                                 </span>
-                              ))}
-                            </div>
-                          )}
+                              );
+                            })}
+                          </div>
                         </td>
                       );
                     })}
@@ -777,7 +1346,7 @@ export default function App() {
                   {vs.expanded && vs.teams.map((team) => (
                     <React.Fragment key={team.id}>
                       <tr className="team-row">
-                        <td className="team-cell sticky-col">
+                        <td className="team-cell sticky-col swimlane-team">
                           <span className="indent level-team" />
                           <button type="button" className="toggle-btn" onClick={() => toggleTeam(vs.id, team.id)}>{team.expanded ? "▾" : "▸"}</button>
                           <span className="name-team">{team.name}</span>
@@ -793,13 +1362,24 @@ export default function App() {
                           return (
                             <td key={s.code} className={`fill-team ${sprintToneClass(s.code)}${s.code === CURRENT_SPRINT_CODE ? " current-col" : ""}`}>
                               <div className="vs-rollup-line">
-                                {DEPARTMENTS.map((dept) => (
-                                  <span key={dept.key} className={`vs-rollup-item${teamNeedFlags[dept.key] ? " has-need" : ""}`} title={`${dept.label} total`}>
-                                    <strong>{dept.key}</strong>
-                                    <em>{Math.round(teamTotals[dept.key])}%</em>
-                                    {teamNeedFlags[dept.key] ? <i className="need-dot" aria-label="Need detected" /> : null}
-                                  </span>
-                                ))}
+                                {DEPARTMENTS.map((dept) => {
+                                  const overloaded = hasTeamOverloadedResource(team, dept.key, s.code, globalNamedTotalsBySprint);
+                                  const maxed = hasTeamMaxedResource(team, dept.key, s.code, globalNamedTotalsBySprint);
+
+                                  return (
+                                    <button
+                                      key={dept.key}
+                                      type="button"
+                                      className={`vs-rollup-item${teamNeedFlags[dept.key] ? " has-need" : ""}${overloaded ? " is-overloaded" : ""}${!overloaded && maxed ? " is-maxed" : ""}`}
+                                      title={`${dept.label} total`}
+                                      onClick={() => openTeamDeptResources(vs.id, team.id, dept.key, s.code)}
+                                    >
+                                      <strong>{dept.key}</strong>
+                                      <em>{Math.round(teamTotals[dept.key])}%</em>
+                                      {teamNeedFlags[dept.key] ? <i className="need-dot" aria-label="Need detected" /> : null}
+                                    </button>
+                                  );
+                                })}
                               </div>
                             </td>
                           );
@@ -809,23 +1389,47 @@ export default function App() {
                       {team.expanded && team.products.map((product) => (
                         <React.Fragment key={product.id}>
                           <tr className="product-row">
-                            <td className="product-cell sticky-col">
+                            <td className="product-cell sticky-col swimlane-product">
                               <span className="indent level-product" />
                               <span className="name-product">{product.name}</span>
                               <span className="row-actions">
+                                <button
+                                  type="button"
+                                  className={`icon-btn product-done-btn${product.doneFromSprint ? " is-done" : ""}`}
+                                  onClick={() => handleProductDoneButton(vs.id, team.id, product)}
+                                  title={product.doneFromSprint ? `Done from ${product.doneFromSprint}` : "Set product done sprint"}
+                                >
+                                  {product.doneFromSprint ? `Done ${product.doneFromSprint}` : "Mark Done"}
+                                </button>
                                 <button type="button" className="icon-btn" onClick={() => editProduct(vs.id, team.id, product.id, product.name)} title="Edit Product">✎</button>
                                 <button type="button" className="icon-btn danger" onClick={() => removeProduct(vs.id, team.id, product.id)} title="Remove Product">✕</button>
                               </span>
                             </td>
 
                             {currentSprints.map((s) => (
-                              <td key={s.code} className={`data-cell ${sprintToneClass(s.code)}${s.code === CURRENT_SPRINT_CODE ? " current-col" : ""}`}>
+                              <td key={s.code} className={`data-cell ${sprintToneClass(s.code)}${s.code === CURRENT_SPRINT_CODE ? " current-col" : ""}${isProductDeliveredAtSprint(product, s.code) ? " is-delivered" : ""}`}>
+                                {(() => {
+                                  const productTotals = Object.fromEntries(
+                                    DEPARTMENTS.map((dept) => [dept.key, getProductDeptPercent(product, dept.key, s.code)])
+                                  );
+                                  const productNeeds = Object.fromEntries(
+                                    DEPARTMENTS.map((dept) => [dept.key, getProductNeedPercent(product, dept.key, s.code) > 0])
+                                  );
+                                  const productOverloads = Object.fromEntries(
+                                    DEPARTMENTS.map((dept) => [dept.key, hasProductOverloadedResource(product, dept.key, s.code, globalNamedTotalsBySprint)])
+                                  );
+
+                                  return (
                                 <ResourceGroup
-                                  totals={Object.fromEntries(DEPARTMENTS.map((dept) => [dept.key, getProductDeptPercent(product, dept.key, s.code)]))}
-                                  needs={Object.fromEntries(DEPARTMENTS.map((dept) => [dept.key, getProductNeedPercent(product, dept.key, s.code) > 0]))}
+                                  totals={productTotals}
+                                  needs={productNeeds}
+                                  overloads={productOverloads}
                                   onToggleResource={(deptKey) => toggleResourceRow(year, product.id, deptKey)}
                                   isResourceOpen={(deptKey) => Boolean(openResourceRows[`${year}-${product.id}-${deptKey}`])}
+                                  readOnly={isProductDeliveredAtSprint(product, s.code)}
                                 />
+                                  );
+                                })()}
                               </td>
                             ))}
                           </tr>
@@ -837,26 +1441,39 @@ export default function App() {
                               <tr key={openKey} className="resource-row" data-dept={dept.key}>
                                 <td className="resource-cell sticky-col">
                                   <span className="indent level-resource" />
-                                  <strong>{dept.label}</strong>
+                                  <button
+                                    type="button"
+                                    className="resource-collapse-btn"
+                                    onClick={() => toggleResourceRow(year, product.id, dept.key)}
+                                    title={`Collapse ${dept.label}`}
+                                  >
+                                    {dept.label}
+                                  </button>
                                   <span className="resource-hint">Enter names for each sprint</span>
                                 </td>
-                                {currentSprints.map((s) => (
-                                  <td key={s.code} className={`resource-input-cell ${sprintToneClass(s.code)}${s.code === CURRENT_SPRINT_CODE ? " current-col" : ""}`}>
-                                    <div className="resource-plan-grid">
+                                {currentSprints.map((s) => {
+                                  const deptOverloaded = hasProductOverloadedResource(product, dept.key, s.code, globalNamedTotalsBySprint);
+                                  const isDeliveredSprint = isProductDeliveredAtSprint(product, s.code);
+
+                                  return (
+                                  <td key={s.code} className={`resource-input-cell ${sprintToneClass(s.code)}${s.code === CURRENT_SPRINT_CODE ? " current-col" : ""}${isDeliveredSprint ? " is-delivered" : ""}`}>
+                                    <div className={`resource-plan-grid${deptOverloaded ? " is-overloaded" : ""}`}>
                                       <div className="resource-plan-head">
                                         <span>Name</span>
                                         <span>%</span>
                                       </div>
                                       {getResourceEntries(product, dept.key, s.code).map((entry, idx) => {
                                         const isNeedRow = idx === RESOURCE_PLAN_ROWS - 1;
+                                        const isActiveResource = String(entry?.name || "").trim() && Number(entry?.percent || 0) >= 10;
                                         return (
-                                          <div key={`${dept.key}-${s.code}-${idx}`} className={`resource-plan-row${isNeedRow ? " is-need" : ""}`}>
+                                          <div key={`${dept.key}-${s.code}-${idx}`} className={`resource-plan-row${isNeedRow ? " is-need" : ""}${!isNeedRow && !isActiveResource ? " is-muted" : ""}`}>
                                             {isNeedRow ? (
                                               <span className="need-label">Need</span>
                                             ) : (
                                               <input
-                                                className="resource-input"
+                                                className={`resource-input${isNamedRowOverloaded(entry, dept.key, s.code, globalNamedTotalsBySprint) ? " is-overloaded-name" : ""}`}
                                                 value={entry.name || ""}
+                                                disabled={isDeliveredSprint}
                                                 onChange={(e) =>
                                                   updateResourcePlanEntry(vs.id, team.id, product.id, dept.key, s.code, idx, "name", e.target.value)
                                                 }
@@ -867,8 +1484,10 @@ export default function App() {
                                               type="number"
                                               className={`resource-pct-input${isNeedRow ? " need-pct" : ""}`}
                                               min="0"
-                                              max="300"
+                                              max="100"
+                                              step="10"
                                               value={entry.percent ?? 0}
+                                              disabled={isDeliveredSprint}
                                               onChange={(e) =>
                                                 updateResourcePlanEntry(vs.id, team.id, product.id, dept.key, s.code, idx, "percent", e.target.value)
                                               }
@@ -878,7 +1497,8 @@ export default function App() {
                                       })}
                                     </div>
                                   </td>
-                                ))}
+                                  );
+                                })}
                               </tr>
                             );
                           })}
@@ -895,6 +1515,57 @@ export default function App() {
           <button type="button" className="add-vs-btn-footer" onClick={addValueStream}>+ Add Value Stream</button>
         </div>
       </div>
+
+      {fullScreenSprintCode ? (
+        <div className="sprint-fullscreen-overlay" onClick={() => setFullScreenSprintCode(null)}>
+          <div className="sprint-fullscreen-panel" onClick={(e) => e.stopPropagation()}>
+            <div className="sprint-fullscreen-head">
+              <div>
+                <div className="sprint-fullscreen-title">{fullScreenSprintCode}</div>
+                <div className="sprint-fullscreen-date">{SPRINT_DATE_MAP[fullScreenSprintCode] || ""}</div>
+              </div>
+              <button type="button" className="sprint-fullscreen-close" onClick={() => setFullScreenSprintCode(null)}>
+                Close
+              </button>
+            </div>
+
+            <div className="sprint-fullscreen-body">
+              {fullScreenSprintData.length === 0 ? (
+                <div className="sprint-empty">No assigned resources in this sprint.</div>
+              ) : (
+                fullScreenSprintData.map((vs) => (
+                  <section key={vs.id} className="fs-vs-block">
+                    <h2 className="fs-vs-name">{vs.name}</h2>
+                    {vs.teams.map((team) => (
+                      <div key={team.id} className="fs-team-block">
+                        <h3 className="fs-team-name">{team.name}</h3>
+                        {team.products.map((product) => (
+                          <div key={product.id} className="fs-product-block">
+                            <div className="fs-product-name">{product.name}</div>
+                            <div className="fs-dept-grid">
+                              {product.departments.map((dept) => (
+                                <div key={`${product.id}-${dept.key}`} className="fs-dept-card">
+                                  <div className="fs-dept-title">{dept.key} - {dept.label}</div>
+                                  {dept.rows.map((row, idx) => (
+                                    <div key={`${product.id}-${dept.key}-${idx}`} className={`fs-row${row.isNeed ? " is-need" : ""}`}>
+                                      <span>{row.name}</span>
+                                      <strong>{row.percent}%</strong>
+                                    </div>
+                                  ))}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                  </section>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
