@@ -119,6 +119,227 @@ function createBaseValueStream() {
   };
 }
 
+const SPRINT_PRESET_CODE = "IT-06-01";
+
+const REQUIRED_VALUE_STREAMS = [
+  {
+    valueStream: "Integrated Value Chain",
+    team: "Trailblazers",
+    products: ["LNPT", "SIT"],
+  },
+  {
+    valueStream: "Production Peformance",
+    team: "Pathfinders",
+    products: ["Sustainment"],
+  },
+  {
+    valueStream: "Innovation and Sustainability",
+    team: "Innovation",
+    products: ["Co-Scientist"],
+  },
+  {
+    valueStream: "Digitalization and Governance",
+    team: "Digital Factory",
+    products: ["Digital Factory"],
+  },
+];
+
+const REQUIRED_SPRINT_ASSIGNMENTS = [
+  { dept: "DS", resource: "David", product: "LNPT", percent: 100 },
+  { dept: "DS", resource: "Kris", product: "FIA", percent: 100 },
+  { dept: "DS", resource: "Vahid", product: "Digital Factory", percent: 100 },
+  { dept: "DS", resource: "Dylan", product: "Co-Scientist", percent: 100 },
+
+  { dept: "DD", resource: "Ose", product: "LNPT", percent: 100 },
+  { dept: "DD", resource: "Adarsh", product: "GS DSG", percent: 100 },
+  { dept: "DD", resource: "Claire", product: "2D DMS Map", percent: 50 },
+  { dept: "DD", resource: "Heena H", product: "2D DMS Map", percent: 100 },
+  { dept: "DD", resource: "Claire", product: "Co-Scientist", percent: 50 },
+
+  { dept: "VA", resource: "Doug", product: "LNPT", percent: 100 },
+  { dept: "VA", resource: "Sushant", product: "FIA", percent: 50 },
+  { dept: "VA", resource: "Sushant", product: "2D DMS Map", percent: 50 },
+  { dept: "VA", resource: "Pokuri", product: "2D DMS Map", percent: 100 },
+  { dept: "VA", resource: "Colin", product: "GS DSG", percent: 100 },
+  { dept: "VA", product: "Co-Scientist", percent: 50, isNeed: true },
+
+  { dept: "PO", resource: "Nico", product: "LNPT", percent: 100 },
+  { dept: "PO", resource: "Moe", product: "FIA", percent: 100 },
+  { dept: "PO", resource: "Shayan", product: "Co-Scientist", percent: 100 },
+  { dept: "PO", resource: "Jordan", product: "2D DMS Map", percent: 100 },
+  { dept: "PO", resource: "Renee", product: "GS DSG", percent: 100 },
+
+  { dept: "SC", resource: "Jide", product: "LNPT", percent: 33 },
+  { dept: "SC", resource: "Jide", product: "GS DSG", percent: 33 },
+  { dept: "SC", resource: "Jide", product: "Co-Scientist", percent: 33 },
+  { dept: "SC", resource: "Christian", product: "FIA", percent: 30 },
+  { dept: "SC", resource: "Christian", product: "2D DMS Map", percent: 30 },
+  { dept: "SC", resource: "Christian", product: "Digital Factory", percent: 40 },
+];
+
+function sameName(a, b) {
+  return String(a || "").trim().toLowerCase() === String(b || "").trim().toLowerCase();
+}
+
+function findValueStreamByName(streams, name) {
+  return (streams || []).find((vs) => sameName(vs.name, name));
+}
+
+function findTeamByName(vs, name) {
+  return (vs?.teams || []).find((team) => sameName(team.name, name));
+}
+
+function findProductByName(streams, name) {
+  for (const vs of streams || []) {
+    for (const team of vs.teams || []) {
+      const found = (team.products || []).find((product) => sameName(product.name, name));
+      if (found) {
+        return found;
+      }
+    }
+  }
+  return null;
+}
+
+function ensureRequiredValueStreams(streams) {
+  REQUIRED_VALUE_STREAMS.forEach((preset) => {
+    let vs = findValueStreamByName(streams, preset.valueStream);
+    if (!vs) {
+      vs = {
+        id: nextId("vs"),
+        name: preset.valueStream,
+        expanded: true,
+        teams: [],
+      };
+      streams.push(vs);
+    }
+
+    let team = findTeamByName(vs, preset.team);
+    if (!team) {
+      team = {
+        id: nextId("team"),
+        name: preset.team,
+        expanded: true,
+        products: [],
+      };
+      vs.teams = [...(vs.teams || []), team];
+    }
+
+    preset.products.forEach((productName) => {
+      const existingInTeam = (team.products || []).find((product) => sameName(product.name, productName));
+      const existingGlobal = findProductByName(streams, productName);
+      if (!existingInTeam && !existingGlobal) {
+        team.products = [...(team.products || []), createProduct(productName)];
+      }
+    });
+  });
+
+  return streams;
+}
+
+function updateProductAllocationFromResources(product, deptKey, sprintCode) {
+  const rows = getResourceEntries(product, deptKey, sprintCode);
+  const assignedTotal = rows
+    .slice(0, RESOURCE_PLAN_ROWS - 1)
+    .reduce((sum, row) => sum + Number(row?.percent || 0), 0);
+
+  const allocations = { ...(product.allocations || {}) };
+  allocations[sprintCode] = {
+    ...(allocations[sprintCode] || { DS: 0, DD: 0, VA: 0, PO: 0, SC: 0 }),
+    [deptKey]: assignedTotal,
+  };
+  product.allocations = allocations;
+}
+
+function upsertNamedResourceForSprint(product, deptKey, sprintCode, resourceName, percent) {
+  const deptMap = { ...(product.resources?.[deptKey] || {}) };
+  const rows = getResourceEntries(product, deptKey, sprintCode).map((entry) => ({ ...entry }));
+  const targetName = String(resourceName || "").trim();
+  if (!targetName) return;
+
+  let idx = rows
+    .slice(0, RESOURCE_PLAN_ROWS - 1)
+    .findIndex((row) => sameName(row?.name, targetName));
+
+  if (idx < 0) {
+    idx = rows
+      .slice(0, RESOURCE_PLAN_ROWS - 1)
+      .findIndex((row) => !String(row?.name || "").trim() && Number(row?.percent || 0) === 0);
+  }
+
+  if (idx < 0) {
+    idx = RESOURCE_PLAN_ROWS - 2;
+  }
+
+  rows[idx] = {
+    ...rows[idx],
+    name: targetName,
+    percent: Number(percent || 0),
+  };
+
+  deptMap[sprintCode] = rows;
+  product.resources = {
+    ...(product.resources || {}),
+    [deptKey]: deptMap,
+  };
+  updateProductAllocationFromResources(product, deptKey, sprintCode);
+}
+
+function setNeedForSprint(product, deptKey, sprintCode, percent) {
+  const deptMap = { ...(product.resources?.[deptKey] || {}) };
+  const rows = getResourceEntries(product, deptKey, sprintCode).map((entry) => ({ ...entry }));
+  rows[RESOURCE_PLAN_ROWS - 1] = {
+    ...(rows[RESOURCE_PLAN_ROWS - 1] || { name: "Need", percent: 0 }),
+    name: "Need",
+    percent: Number(percent || 0),
+  };
+
+  deptMap[sprintCode] = rows;
+  product.resources = {
+    ...(product.resources || {}),
+    [deptKey]: deptMap,
+  };
+  updateProductAllocationFromResources(product, deptKey, sprintCode);
+}
+
+function applyRequiredSprintAssignments(streams) {
+  REQUIRED_SPRINT_ASSIGNMENTS.forEach((assignment) => {
+    const product = findProductByName(streams, assignment.product);
+    if (!product) return;
+
+    if (assignment.isNeed) {
+      setNeedForSprint(product, assignment.dept, SPRINT_PRESET_CODE, assignment.percent);
+      return;
+    }
+
+    upsertNamedResourceForSprint(
+      product,
+      assignment.dept,
+      SPRINT_PRESET_CODE,
+      assignment.resource,
+      assignment.percent
+    );
+  });
+
+  return streams;
+}
+
+function applyRequiredPlannerDefaults(streams, year) {
+  if (year !== 2026) return streams;
+
+  const cloned = (streams || []).map((vs) => ({
+    ...vs,
+    teams: (vs.teams || []).map((team) => ({
+      ...team,
+      products: (team.products || []).map((product) => ensureProductShape({ ...product })),
+    })),
+  }));
+
+  ensureRequiredValueStreams(cloned);
+  applyRequiredSprintAssignments(cloned);
+  return cloned;
+}
+
 function initialYearData() {
   return [createBaseValueStream()];
 }
@@ -202,7 +423,7 @@ function normalizeDataByYear(rawByYear) {
             }))
           : [],
       }));
-      return [yr, normalizedStreams];
+      return [yr, applyRequiredPlannerDefaults(normalizedStreams, yr)];
     })
   );
 }
@@ -530,6 +751,30 @@ export default function App() {
   const [openResourceRows, setOpenResourceRows] = useState({});
   const [selectedSprints, setSelectedSprints] = useState(new Set());
   const [fullScreenSprintCode, setFullScreenSprintCode] = useState(null);
+  const [nameDialog, setNameDialog] = useState({
+    open: false,
+    title: "",
+    label: "",
+    placeholder: "",
+    submitLabel: "Save",
+    value: "",
+    onSubmit: null,
+  });
+  const [confirmDialog, setConfirmDialog] = useState({
+    open: false,
+    title: "",
+    message: "",
+    confirmLabel: "Confirm",
+    onConfirm: null,
+  });
+  const [doneSprintDialog, setDoneSprintDialog] = useState({
+    open: false,
+    vsId: null,
+    teamId: null,
+    productId: null,
+    productName: "",
+    value: CURRENT_SPRINT_CODE,
+  });
   const historyRef = useRef([]);
   const gridScrollRef = useRef(null);
 
@@ -668,11 +913,81 @@ export default function App() {
     [updateCurrentYear]
   );
 
+  const closeNameDialog = useCallback(() => {
+    setNameDialog((prev) => ({ ...prev, open: false }));
+  }, []);
+
+  const openNameDialog = useCallback((config) => {
+    setNameDialog({
+      open: true,
+      title: config.title || "Edit Name",
+      label: config.label || "Name",
+      placeholder: config.placeholder || "Enter name",
+      submitLabel: config.submitLabel || "Save",
+      value: config.initialValue || "",
+      onSubmit: config.onSubmit || null,
+    });
+  }, []);
+
+  const handleNameDialogSave = useCallback(() => {
+    const trimmed = String(nameDialog.value || "").trim();
+    if (!trimmed) return;
+    const submitAction = nameDialog.onSubmit;
+    setNameDialog((prev) => ({ ...prev, open: false }));
+    if (typeof submitAction === "function") {
+      submitAction(trimmed);
+    }
+  }, [nameDialog]);
+
+  const closeConfirmDialog = useCallback(() => {
+    setConfirmDialog((prev) => ({ ...prev, open: false }));
+  }, []);
+
+  const openConfirmDialog = useCallback((config) => {
+    setConfirmDialog({
+      open: true,
+      title: config.title || "Please Confirm",
+      message: config.message || "Are you sure you want to continue?",
+      confirmLabel: config.confirmLabel || "Confirm",
+      onConfirm: config.onConfirm || null,
+    });
+  }, []);
+
+  const handleConfirmDialogProceed = useCallback(() => {
+    const action = confirmDialog.onConfirm;
+    setConfirmDialog((prev) => ({ ...prev, open: false }));
+    if (typeof action === "function") {
+      action();
+    }
+  }, [confirmDialog]);
+
+  const closeDoneSprintDialog = useCallback(() => {
+    setDoneSprintDialog((prev) => ({ ...prev, open: false }));
+  }, []);
+
+  const openDoneSprintDialog = useCallback((vsId, teamId, product) => {
+    setDoneSprintDialog({
+      open: true,
+      vsId,
+      teamId,
+      productId: product.id,
+      productName: product.name || "Product",
+      value: product.doneFromSprint || CURRENT_SPRINT_CODE,
+    });
+  }, []);
+
   const addValueStream = useCallback(() => {
-    const name = window.prompt("Value Stream name");
-    if (!name || !name.trim()) return;
-    updateCurrentYear((rows) => [...rows, { id: nextId("vs"), name: name.trim(), expanded: true, teams: [] }]);
-  }, [updateCurrentYear]);
+    openNameDialog({
+      title: "Add New Value Stream",
+      label: "Value Stream Name",
+      placeholder: "Example: Integrated Value Chain",
+      submitLabel: "Add Value Stream",
+      initialValue: "",
+      onSubmit: (name) => {
+        updateCurrentYear((rows) => [...rows, { id: nextId("vs"), name, expanded: true, teams: [] }]);
+      },
+    });
+  }, [openNameDialog, updateCurrentYear]);
 
   const scaleTeamsFromTemplate = useCallback(() => {
     const raw = window.prompt("How many teams do you want in total?", String(TEAM_SCALE_TARGET));
@@ -812,6 +1127,20 @@ export default function App() {
     [updateCurrentYear]
   );
 
+  const saveDoneSprintDialog = useCallback(() => {
+    if (!doneSprintDialog.value || !ALL_SPRINT_CODES.includes(doneSprintDialog.value)) {
+      return;
+    }
+
+    setProductDoneFromSprint(
+      doneSprintDialog.vsId,
+      doneSprintDialog.teamId,
+      doneSprintDialog.productId,
+      doneSprintDialog.value
+    );
+    setDoneSprintDialog((prev) => ({ ...prev, open: false }));
+  }, [doneSprintDialog, setProductDoneFromSprint]);
+
   const handleProductDoneButton = useCallback(
     (vsId, teamId, product) => {
       if (product.doneFromSprint) {
@@ -819,28 +1148,9 @@ export default function App() {
         return;
       }
 
-      const current = product.doneFromSprint || CURRENT_SPRINT_CODE;
-      const value = window.prompt(
-        "Set done-from sprint code (example: IT-06-01). Leave empty to clear done status.",
-        current
-      );
-
-      if (value === null) return;
-      const trimmed = value.trim();
-
-      if (!trimmed) {
-        setProductDoneFromSprint(vsId, teamId, product.id, null);
-        return;
-      }
-
-      if (!ALL_SPRINT_CODES.includes(trimmed)) {
-        window.alert("Invalid sprint code.");
-        return;
-      }
-
-      setProductDoneFromSprint(vsId, teamId, product.id, trimmed);
+      openDoneSprintDialog(vsId, teamId, product);
     },
-    [setProductDoneFromSprint]
+    [openDoneSprintDialog, setProductDoneFromSprint]
   );
 
   const revertLastChange = useCallback(() => {
@@ -853,126 +1163,179 @@ export default function App() {
 
   const editValueStream = useCallback(
     (vsId, currentName) => {
-      const name = window.prompt("Edit Value Stream", currentName);
-      if (!name || !name.trim()) return;
-      updateCurrentYear((rows) => rows.map((vs) => (vs.id === vsId ? { ...vs, name: name.trim() } : vs)));
+      openNameDialog({
+        title: "Edit Value Stream",
+        label: "Value Stream Name",
+        placeholder: "Update value stream name",
+        submitLabel: "Save Changes",
+        initialValue: currentName || "",
+        onSubmit: (name) => {
+          updateCurrentYear((rows) => rows.map((vs) => (vs.id === vsId ? { ...vs, name } : vs)));
+        },
+      });
     },
-    [updateCurrentYear]
+    [openNameDialog, updateCurrentYear]
   );
 
   const removeValueStream = useCallback(
     (vsId) => {
-      if (!window.confirm("Remove this Value Stream?")) return;
-      updateCurrentYear((rows) => rows.filter((vs) => vs.id !== vsId));
+      openConfirmDialog({
+        title: "Remove Value Stream",
+        message: "This will remove the value stream and all its teams and products.",
+        confirmLabel: "Remove",
+        onConfirm: () => {
+          updateCurrentYear((rows) => rows.filter((vs) => vs.id !== vsId));
+        },
+      });
     },
-    [updateCurrentYear]
+    [openConfirmDialog, updateCurrentYear]
   );
 
   const addTeam = useCallback(
     (vsId) => {
-      const name = window.prompt("Team name");
-      if (!name || !name.trim()) return;
-      updateCurrentYear((rows) =>
-        rows.map((vs) =>
-          vs.id !== vsId ? vs : { ...vs, teams: [...vs.teams, { id: nextId("team"), name: name.trim(), expanded: true, products: [] }] }
-        )
-      );
+      openNameDialog({
+        title: "Add New Team",
+        label: "Team Name",
+        placeholder: "Example: Trailblazers",
+        submitLabel: "Add Team",
+        initialValue: "",
+        onSubmit: (name) => {
+          updateCurrentYear((rows) =>
+            rows.map((vs) =>
+              vs.id !== vsId ? vs : { ...vs, teams: [...vs.teams, { id: nextId("team"), name, expanded: true, products: [] }] }
+            )
+          );
+        },
+      });
     },
-    [updateCurrentYear]
+    [openNameDialog, updateCurrentYear]
   );
 
   const editTeam = useCallback(
     (vsId, teamId, currentName) => {
-      const name = window.prompt("Edit Team", currentName);
-      if (!name || !name.trim()) return;
-      updateCurrentYear((rows) =>
-        rows.map((vs) =>
-          vs.id !== vsId
-            ? vs
-            : {
-                ...vs,
-                teams: vs.teams.map((t) => (t.id === teamId ? { ...t, name: name.trim() } : t)),
-              }
-        )
-      );
+      openNameDialog({
+        title: "Edit Team",
+        label: "Team Name",
+        placeholder: "Update team name",
+        submitLabel: "Save Changes",
+        initialValue: currentName || "",
+        onSubmit: (name) => {
+          updateCurrentYear((rows) =>
+            rows.map((vs) =>
+              vs.id !== vsId
+                ? vs
+                : {
+                    ...vs,
+                    teams: vs.teams.map((t) => (t.id === teamId ? { ...t, name } : t)),
+                  }
+            )
+          );
+        },
+      });
     },
-    [updateCurrentYear]
+    [openNameDialog, updateCurrentYear]
   );
 
   const removeTeam = useCallback(
     (vsId, teamId) => {
-      if (!window.confirm("Remove this Team?")) return;
-      updateCurrentYear((rows) =>
-        rows.map((vs) =>
-          vs.id !== vsId ? vs : { ...vs, teams: vs.teams.filter((t) => t.id !== teamId) }
-        )
-      );
+      openConfirmDialog({
+        title: "Remove Team",
+        message: "This will remove the team and all products under it.",
+        confirmLabel: "Remove",
+        onConfirm: () => {
+          updateCurrentYear((rows) =>
+            rows.map((vs) =>
+              vs.id !== vsId ? vs : { ...vs, teams: vs.teams.filter((t) => t.id !== teamId) }
+            )
+          );
+        },
+      });
     },
-    [updateCurrentYear]
+    [openConfirmDialog, updateCurrentYear]
   );
 
   const addProduct = useCallback(
     (vsId, teamId) => {
-      const name = window.prompt("Product name");
-      if (!name || !name.trim()) return;
-      updateCurrentYear((rows) =>
-        rows.map((vs) =>
-          vs.id !== vsId
-            ? vs
-            : {
-                ...vs,
-                teams: vs.teams.map((t) =>
-                  t.id !== teamId ? t : { ...t, products: [...t.products, createProduct(name.trim())] }
-                ),
-              }
-        )
-      );
+      openNameDialog({
+        title: "Add New Product",
+        label: "Product Name",
+        placeholder: "Example: Co-Scientist",
+        submitLabel: "Add Product",
+        initialValue: "",
+        onSubmit: (name) => {
+          updateCurrentYear((rows) =>
+            rows.map((vs) =>
+              vs.id !== vsId
+                ? vs
+                : {
+                    ...vs,
+                    teams: vs.teams.map((t) =>
+                      t.id !== teamId ? t : { ...t, products: [...t.products, createProduct(name)] }
+                    ),
+                  }
+            )
+          );
+        },
+      });
     },
-    [updateCurrentYear]
+    [openNameDialog, updateCurrentYear]
   );
 
   const editProduct = useCallback(
     (vsId, teamId, productId, currentName) => {
-      const name = window.prompt("Edit Product", currentName);
-      if (!name || !name.trim()) return;
-      updateCurrentYear((rows) =>
-        rows.map((vs) =>
-          vs.id !== vsId
-            ? vs
-            : {
-                ...vs,
-                teams: vs.teams.map((t) =>
-                  t.id !== teamId
-                    ? t
-                    : {
-                        ...t,
-                        products: t.products.map((p) => (p.id === productId ? { ...p, name: name.trim() } : p)),
-                      }
-                ),
-              }
-        )
-      );
+      openNameDialog({
+        title: "Edit Product",
+        label: "Product Name",
+        placeholder: "Update product name",
+        submitLabel: "Save Changes",
+        initialValue: currentName || "",
+        onSubmit: (name) => {
+          updateCurrentYear((rows) =>
+            rows.map((vs) =>
+              vs.id !== vsId
+                ? vs
+                : {
+                    ...vs,
+                    teams: vs.teams.map((t) =>
+                      t.id !== teamId
+                        ? t
+                        : {
+                            ...t,
+                            products: t.products.map((p) => (p.id === productId ? { ...p, name } : p)),
+                          }
+                    ),
+                  }
+            )
+          );
+        },
+      });
     },
-    [updateCurrentYear]
+    [openNameDialog, updateCurrentYear]
   );
 
   const removeProduct = useCallback(
     (vsId, teamId, productId) => {
-      if (!window.confirm("Remove this Product?")) return;
-      updateCurrentYear((rows) =>
-        rows.map((vs) =>
-          vs.id !== vsId
-            ? vs
-            : {
-                ...vs,
-                teams: vs.teams.map((t) =>
-                  t.id !== teamId ? t : { ...t, products: t.products.filter((p) => p.id !== productId) }
-                ),
-              }
-        )
-      );
+      openConfirmDialog({
+        title: "Remove Product",
+        message: "This will remove the product and all sprint allocations under it.",
+        confirmLabel: "Remove",
+        onConfirm: () => {
+          updateCurrentYear((rows) =>
+            rows.map((vs) =>
+              vs.id !== vsId
+                ? vs
+                : {
+                    ...vs,
+                    teams: vs.teams.map((t) =>
+                      t.id !== teamId ? t : { ...t, products: t.products.filter((p) => p.id !== productId) }
+                    ),
+                  }
+            )
+          );
+        },
+      });
     },
-    [updateCurrentYear]
+    [openConfirmDialog, updateCurrentYear]
   );
 
   const updateAllocation = useCallback(
@@ -1563,6 +1926,102 @@ export default function App() {
                 ))
               )}
             </div>
+          </div>
+        </div>
+      ) : null}
+
+      {nameDialog.open ? (
+        <div className="name-dialog-overlay" onClick={closeNameDialog}>
+          <div className="name-dialog-panel" onClick={(e) => e.stopPropagation()}>
+            <div className="name-dialog-head">
+              <div className="name-dialog-eyebrow">Planner Update</div>
+              <h3>{nameDialog.title}</h3>
+              <p>Use clear naming so reporting and sprint insights remain consistent.</p>
+            </div>
+
+            <form
+              className="name-dialog-form"
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleNameDialogSave();
+              }}
+            >
+              <label htmlFor="nameDialogInput">{nameDialog.label}</label>
+              <input
+                id="nameDialogInput"
+                value={nameDialog.value}
+                onChange={(e) => setNameDialog((prev) => ({ ...prev, value: e.target.value }))}
+                placeholder={nameDialog.placeholder}
+                autoFocus
+              />
+
+              <div className="name-dialog-actions">
+                <button type="button" className="name-dialog-btn ghost" onClick={closeNameDialog}>Cancel</button>
+                <button type="submit" className="name-dialog-btn primary" disabled={!String(nameDialog.value || "").trim()}>
+                  {nameDialog.submitLabel}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
+      {confirmDialog.open ? (
+        <div className="name-dialog-overlay" onClick={closeConfirmDialog}>
+          <div className="name-dialog-panel" onClick={(e) => e.stopPropagation()}>
+            <div className="name-dialog-head">
+              <div className="name-dialog-eyebrow">Confirmation</div>
+              <h3>{confirmDialog.title}</h3>
+              <p>{confirmDialog.message}</p>
+            </div>
+
+            <div className="name-dialog-form">
+              <div className="name-dialog-actions">
+                <button type="button" className="name-dialog-btn ghost" onClick={closeConfirmDialog}>Cancel</button>
+                <button type="button" className="name-dialog-btn danger" onClick={handleConfirmDialogProceed}>
+                  {confirmDialog.confirmLabel}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {doneSprintDialog.open ? (
+        <div className="name-dialog-overlay" onClick={closeDoneSprintDialog}>
+          <div className="name-dialog-panel" onClick={(e) => e.stopPropagation()}>
+            <div className="name-dialog-head">
+              <div className="name-dialog-eyebrow">Product Done</div>
+              <h3>Set Done-From Sprint</h3>
+              <p>{doneSprintDialog.productName}: choose the sprint from which this product is considered done.</p>
+            </div>
+
+            <form
+              className="name-dialog-form"
+              onSubmit={(e) => {
+                e.preventDefault();
+                saveDoneSprintDialog();
+              }}
+            >
+              <label htmlFor="doneSprintSelect">Sprint Code</label>
+              <select
+                id="doneSprintSelect"
+                value={doneSprintDialog.value}
+                onChange={(e) => setDoneSprintDialog((prev) => ({ ...prev, value: e.target.value }))}
+                autoFocus
+              >
+                {ALL_SPRINT_CODES.map((code) => (
+                  <option key={code} value={code}>
+                    {code}
+                  </option>
+                ))}
+              </select>
+
+              <div className="name-dialog-actions">
+                <button type="button" className="name-dialog-btn ghost" onClick={closeDoneSprintDialog}>Cancel</button>
+                <button type="submit" className="name-dialog-btn primary">Apply</button>
+              </div>
+            </form>
           </div>
         </div>
       ) : null}

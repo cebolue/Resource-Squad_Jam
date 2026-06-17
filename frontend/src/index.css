@@ -341,6 +341,151 @@ thead .sticky-col {
   background: rgba(240, 124, 0, 0.2);
 }
 
+.name-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1250;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background:
+    radial-gradient(circle at 8% 8%, rgba(240, 124, 0, 0.2), transparent 42%),
+    radial-gradient(circle at 90% 0%, rgba(95, 138, 197, 0.22), transparent 38%),
+    rgba(7, 12, 18, 0.78);
+  backdrop-filter: blur(6px);
+  animation: overlayFadeIn 180ms ease-out;
+}
+
+.name-dialog-panel {
+  width: min(520px, 100%);
+  border-radius: 14px;
+  border: 1px solid rgba(136, 171, 210, 0.42);
+  background: linear-gradient(180deg, rgba(22, 35, 49, 0.98), rgba(14, 24, 35, 0.98));
+  box-shadow:
+    0 24px 60px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(214, 231, 250, 0.2);
+  overflow: hidden;
+  animation: panelExpandIn 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.name-dialog-head {
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid rgba(110, 143, 177, 0.34);
+  background: linear-gradient(90deg, rgba(240, 124, 0, 0.13), rgba(53, 86, 121, 0.18));
+}
+
+.name-dialog-eyebrow {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: #ffc98d;
+  margin-bottom: 4px;
+}
+
+.name-dialog-head h3 {
+  margin: 0;
+  font-size: 20px;
+  color: #e6f1fc;
+}
+
+.name-dialog-head p {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: #b9cbde;
+}
+
+.name-dialog-form {
+  padding: 14px 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.name-dialog-form label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #d6e7f8;
+}
+
+.name-dialog-form input {
+  border: 1px solid #557293;
+  border-radius: 9px;
+  background: #182634;
+  color: #e7f1fa;
+  padding: 9px 10px;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.name-dialog-form select {
+  border: 1px solid #557293;
+  border-radius: 9px;
+  background: #182634;
+  color: #e7f1fa;
+  padding: 9px 10px;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.name-dialog-form input:focus {
+  border-color: #89afd8;
+  box-shadow: 0 0 0 3px rgba(116, 167, 224, 0.24);
+}
+
+.name-dialog-form select:focus {
+  border-color: #89afd8;
+  box-shadow: 0 0 0 3px rgba(116, 167, 224, 0.24);
+}
+
+.name-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.name-dialog-btn {
+  border-radius: 8px;
+  font-weight: 600;
+  padding: 7px 13px;
+  cursor: pointer;
+  border: 1px solid #48627d;
+}
+
+.name-dialog-btn.ghost {
+  background: rgba(34, 51, 67, 0.85);
+  color: #ccdeef;
+}
+
+.name-dialog-btn.ghost:hover {
+  background: rgba(49, 71, 92, 0.95);
+}
+
+.name-dialog-btn.primary {
+  border-color: rgba(240, 124, 0, 0.7);
+  background: linear-gradient(180deg, rgba(240, 124, 0, 0.36), rgba(175, 90, 22, 0.45));
+  color: #ffe3c0;
+}
+
+.name-dialog-btn.primary:hover {
+  background: linear-gradient(180deg, rgba(240, 124, 0, 0.44), rgba(175, 90, 22, 0.56));
+}
+
+.name-dialog-btn.danger {
+  border-color: rgba(208, 98, 118, 0.68);
+  background: linear-gradient(180deg, rgba(176, 60, 82, 0.4), rgba(120, 36, 53, 0.48));
+  color: #ffd2db;
+}
+
+.name-dialog-btn.danger:hover {
+  background: linear-gradient(180deg, rgba(196, 70, 94, 0.46), rgba(137, 42, 61, 0.56));
+}
+
+.name-dialog-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .sprint-fullscreen-overlay {
   position: fixed;
   inset: 0;
