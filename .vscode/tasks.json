@@ -1,0 +1,65 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Start backend dev server",
+      "type": "shell",
+      "command": "npm",
+      "args": ["run", "dev:backend"],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "custom",
+        "pattern": {
+          "regexp": ".+",
+          "message": 0
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "\\[nodemon\\] starting|> backend@.* dev",
+          "endsPattern": "Server running on port"
+        }
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "dev"
+      }
+    },
+    {
+      "label": "Start frontend dev server",
+      "type": "shell",
+      "command": "npm",
+      "args": ["run", "dev:frontend"],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "custom",
+        "pattern": {
+          "regexp": ".+",
+          "message": 0
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "> frontend@.* dev|> vite",
+          "endsPattern": "Local:\\s+http://127.0.0.1:5175/|Local:\\s+http://localhost:5175/"
+        }
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "dev"
+      }
+    },
+    {
+      "label": "Start full stack dev",
+      "dependsOn": ["Start backend dev server", "Start frontend dev server"],
+      "dependsOrder": "parallel",
+      "problemMatcher": []
+    }
+  ]
+}

@@ -27,10 +27,7 @@ router.get('/', async (req, res) => {
     res.json(result.rows);
   } catch (err) {
     console.error('DB error:', err && err.message ? err.message : err);
-    return res.status(200).json({
-      message: 'Database not configured or unavailable. Returning fallback data.',
-      teams: FALLBACK_TEAMS,
-    });
+    return res.status(200).json(FALLBACK_TEAMS);
   }
 });
 

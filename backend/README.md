@@ -26,6 +26,8 @@ Option B - using the included Node helper (no `psql` required):
 
    npm run dev
 
+If PostgreSQL is not configured yet, `GET /api/teams` still returns a small fallback team list so the frontend can boot in local development.
+
 API endpoints:
 - GET /health
 - GET /api/teams

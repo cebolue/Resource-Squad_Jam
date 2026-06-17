@@ -1,0 +1,20 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Launch Full Stack App",
+      "type": "pwa-chrome",
+      "request": "launch",
+      "url": "http://localhost:5175",
+      "webRoot": "${workspaceFolder}/frontend/src",
+      "preLaunchTask": "Start full stack dev"
+    },
+    {
+      "name": "Open Existing Frontend",
+      "type": "pwa-chrome",
+      "request": "launch",
+      "url": "http://localhost:5175",
+      "webRoot": "${workspaceFolder}/frontend/src"
+    }
+  ]
+}
